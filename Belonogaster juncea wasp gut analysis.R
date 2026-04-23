@@ -313,7 +313,24 @@ summary(fitted.model)
 #checking assumptions
 plot(nestno.divsersity_aov, pch = 16, col = "blue")
 kruskal.test(nest.diversity$mean_diversity ~ nest.diversity$nests)
-
+######
+#comparison on villge diversity 
+results <- comp %>%
+  group_by(village, nest) %>%
+  summarise( simpson = diversity(table(species), index = "simpson", .groups = "drop" )
+#plotting graph
+results %>%
+  ggplot( aes(x=village, y=simpson, fill=village)) +
+  geom_boxplot() +
+  scale_fill_viridis(discrete = TRUE, alpha=0.6, option="A") +
+  theme(
+    legend.position="none",
+    plot.title = element_text(size=11)
+  ) +
+  xlab("village")
+#ANOVA to check for statistical difference
+vilcomp<-aov(results$simpson~ results$village)
+summary(vilcomp)
 ############# NMDS analysis ####################################################
 #making individual nest NMDS analysis
 #creating a dataset formatted for NMDS
@@ -376,7 +393,50 @@ ordihull(NMDS4,groups=treat,draw="polygon",col="grey90",label=F)
 orditorp(NMDS4,display="sites",col="red",air=0.01)
 orditorp(NMDS4,display="sites",col=c(rep("green",5),rep("blue",5)),
          air=0.01,cex=1.25)
-
+#regional compaersion NMDS
+#creating a new dataset separating samples by region
+Yaounde <-c("CM2","CM3","CM4","CM6","CM7","CM9","CM11")
+Bafousam <- c("CM13", "CM14", "CM15","CM16","CM18","CM19")
+Yaounde<- as.data.frame(Yaounde)
+Yaounde<- Yaounde %>% mutate(region= "Yaounde")
+Yaounde<- Yaounde %>% rename(village = Yaounde)
+Bafousam<- as.data.frame(Bafousam)
+Bafousam<- Bafousam %>% mutate(region= "Bafousam")
+Bafousam<- Bafousam %>% rename(village = Bafousam)
+regions<-rbind(Yaounde,Bafousam)
+indivvies<- filtered %>%
+  separate(ASV, into = c("plate", "village", "num1", "num2"), sep = "_") %>%
+  mutate(village_nest_indiv = paste(village, num1, num2, sep = "_")) %>%
+  mutate(village = paste(village)) %>%
+  select(-num1, -num2)
+indivvies<-left_join(indivvies, regions)
+indivvies<- indivvies%>% mutate(region_village_nest_indiv= paste(region,village_nest_indiv, sep = "_"))
+#creating a dataset that has the species compositions of each sample
+species_mat <- indivvies %>%
+  group_by(village_nest_indiv, species) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  pivot_wider(names_from = species,
+              values_from = n,
+              values_fill = 0)
+#remove character variables
+NMDSdat4 <- column_to_rownames(species_mat, "village_nest_indiv")
+#create the treatment groups
+treat <- indivvies %>%
+  distinct(village_nest_indiv, region) %>%
+  filter(village_nest_indiv %in% rownames(NMDSdat4)) %>%
+  arrange(match(village_nest_indiv, rownames(NMDSdat4))) %>%
+  pull(region)
+#NMDS calculation
+NMDS4 <- metaMDS(NMDSdat4, distance = "bray", k = 2)
+#PERMANOVA statistic calculation
+adonis2(
+  NMDSdat4 ~ treat,
+  method = "bray",
+  permutations = 999
+)
+#PERMDISP statistic calculation
+bd <- betadisper(vegdist(NMDSdat4, method = "bray"), treat)
+anova(bd)
 ############# distribution of pest predation ###################################
 #quick-checking if pest species are found across all the villages. 
 view(filter((plates %>% group_by(village)%>% 
@@ -435,7 +495,46 @@ ggplot(pestease2, aes(x=village, y=Freq/n, fill=village)) +
   scale_fill_viridis_d() +
   guides(fill = FALSE) +
   labs(x = "Village",y = "Count")
+######
+#pest predation across region comparison
+pestyys<-indivvies%>% filter(species == "Helicoverpa armigera" |species == 
+                          "Zonocerus variegatus"|species == 
+                          "Spodoptera frugiperda"|species == 
+                          "Maruca vitrata"|species == 
+                          "Spodoptera eridania"|species == 
+                          "Lagria hirta"|species == 
+                          "Taphronota calliparea"|species == 
+                          "Chrysodeixis acuta"|species == 
+                          "Spoladea recurvalis"|species == 
+                          "Anomis involuta"|species == 
+                          "Spodoptera littoralis"|species == 
+                          "Macrotermes herus"|species == 
+                          "Hymenia perspectalis"|species == 
+                          "Acraea eponina"|species == 
+                          "Paysandisia archon")
 
+#creating regional tags for the samples
+woahhh<-pestyys%>%filter(region == "Bafousam")
+woahhhh<-as.data.frame(table(woahhh$species))
+table(woahhh$species)
+nrow(woahhhh)
+
+hahah<-pestyys%>%filter(region == "Yaounde")
+hahaha<-as.data.frame(table(hahah$species))
+table(hahah$species)
+nrow(hahaha)
+
+woahhhh<-woahhhh%>%mutate(region= "Bafoussam")
+hahaha<-hahaha%>%mutate(region= "Yaoundé")
+boofers<-rbind(woahhhh,hahaha)
+view(boofers)
+#plotting graph
+ggplot(boofers, aes(fill=region, y=Freq, x=Var1)) + 
+  geom_bar(position='dodge', stat='identity') +
+  scale_color_viridis() + 
+  theme(text = element_text(size =15),
+  axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x ="Pest species", y= "Count")
 ############## bipartite network ###############################################
 #checking number of reads attributed to each  order
 table(africanspecs$order)
